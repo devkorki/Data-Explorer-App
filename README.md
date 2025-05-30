@@ -3,6 +3,7 @@
 This Streamlit application allows you to interactively explore, clean, and analyze user interaction data through visual EDA, persona creation, feature engineering, and clustering with dimensionality reduction.
 
 ## Folder Structure
+```bash
 
 ├── app.py # Main Streamlit application
 ├── mypackage/ # Contains modular pipeline logic
@@ -23,6 +24,7 @@ This Streamlit application allows you to interactively explore, clean, and analy
 │ └── plots/
 └── requirements.txt # Required Python packages
 
+```
 
 ## Features
 
@@ -49,17 +51,17 @@ pip install -r requirements.txt
 
 Place the following files inside the input/ directory:
 
-relevant_clients.npy
+- relevant_clients.npy
 
-add_to_cart.parquet
+- add_to_cart.parquet
 
-remove_from_cart.parquet
+- remove_from_cart.parquet
 
-product_buy.parquet
+- product_buy.parquet
 
-search_query.parquet
+- search_query.parquet
 
-page_visit.parquet
+- page_visit.parquet
 
 ## Run the app
 streamlit run app.py
