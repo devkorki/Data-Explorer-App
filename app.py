@@ -137,6 +137,8 @@ with tab2:
             np.random.seed(seed)
             sample = np.random.choice(clients_all, chunk_size, replace=False) if randomize else clients_all[:chunk_size]
             st.session_state.client_ids = sample
+            st.session_state.seed = seed
+
             st.success(f"Sampled {chunk_size} clients")
 
     # --- Step 1.5: Filter and Cache All Files ---
@@ -177,6 +179,9 @@ with tab2:
                         st.info(f"✅ {label}: using cached file for seed {seed}")
                     else:
                         df = load_parquet_filtered(file, st.session_state.client_ids)
+                        # if 'sku' in df.columns:
+                        #     props = pd.read_parquet(os.path.join(INPUT_DIR, "product_properties.parquet"))
+                        #     df = df.merge(props[["sku", "category", "price"]], on="sku", how="left")
                         df.to_csv(output_path, index=False)
                         st.success(f"📁 {label}: saved {len(df)} rows to `{output_path}`")
 
@@ -213,15 +218,41 @@ with tab2:
                     plot_heatmap(df, file_label)
 
     # --- Step 2.5: Generate Personas ---
+    # st.header("Generate Personas")
+    # if st.button("Create Personas"):
+    #     with st.spinner("Assigning personas and saving file..."):
+    #         visits = pd.read_csv("output/page_visit_filtered.csv")
+    #         carts = pd.read_csv("output/add_to_cart_filtered.csv")
+    #         removes = pd.read_csv("output/remove_from_cart_filtered.csv")
+    #         buys = pd.read_csv("output/product_buy_filtered.csv")
+    #         create_user_segments(visits, carts, removes, buys)
+    #         st.success("✅ Personas saved to `output/user_personas.csv`")
+    
     st.header("Generate Personas")
     if st.button("Create Personas"):
-        with st.spinner("Assigning personas and saving file..."):
-            visits = pd.read_csv("output/page_visit_filtered.csv")
-            carts = pd.read_csv("output/add_to_cart_filtered.csv")
-            removes = pd.read_csv("output/remove_from_cart_filtered.csv")
-            buys = pd.read_csv("output/product_buy_filtered.csv")
-            create_user_segments(visits, carts, removes, buys)
-            st.success("✅ Personas saved to `output/user_personas.csv`")
+        if 'client_ids' not in st.session_state:
+            st.warning("Please sample clients first.")
+        else:
+            seed_str = f"_seed_{seed}"
+            with st.spinner("Assigning personas and saving file..."):
+                try:
+                    # visits = pd.read_csv(f"output/page_visit_seed_{seed_str}.csv")
+                    # carts = pd.read_csv(f"output/add_to_cart_seed_{seed_str}.csv")
+                    # removes = pd.read_csv(f"output/remove_from_cart_seed_{seed_str}.csv")
+                    # buys = pd.read_csv(f"output/product_buy_seed_{seed_str}.csv")
+                    
+                    visits = pd.read_csv(f"output/page_visit{seed_str}.csv")
+                    carts = pd.read_csv(f"output/add_to_cart{seed_str}.csv")
+                    removes = pd.read_csv(f"output/remove_from_cart{seed_str}.csv")
+                    buys = pd.read_csv(f"output/product_buy{seed_str}.csv")
+
+
+                    create_user_segments(visits, carts, removes, buys)
+                    st.success(f"✅ Personas saved to `output/user_personas.csv` (based on seed {seed})")
+                except FileNotFoundError as e:
+                    st.error(f" Missing one or more filtered files for seed {seed}. Please run filtering first.")
+                    st.stop()
+
 
     # --- Step 3: Feature Engineering ---
     st.header("Run Feature Engineering")
@@ -530,15 +561,57 @@ with tab3:
 #         st.write(f"Client B: `{row.client_2}`")
 #         st.write(f"Cosine similarity: `{row.similarity:.4f}`")
 with tab1:
+    # st.header("Basic Data Statistics for Filtered Files")
+
+    # # Get list of available filtered CSVs
+    # available_files = [f for f in os.listdir(OUTPUT_DIR) if f.endswith("_filtered.csv")]
+
+    # if not available_files:
+    #     st.warning("No filtered CSV files found in the output directory.")
+    # else:
+    #     selected_file = st.selectbox("Select a filtered file:", available_files)
+    #     file_path = os.path.join(OUTPUT_DIR, selected_file)
+
+    #     try:
+    #         df = pd.read_csv(file_path)
+    #         st.subheader("Preview of the Data")
+    #         st.dataframe(df.head(100), use_container_width=True)
+
+    #         st.subheader("Summary Statistics")
+    #         st.write(df.describe(include='all'))
+
+    #         st.subheader("Missing Values per Column")
+    #         st.write(df.isnull().sum())
+
+    #         st.subheader("Data Types")
+    #         buffer = df.dtypes.reset_index()
+    #         buffer.columns = ["Column", "Type"]
+    #         st.dataframe(buffer)
+
+    #     except Exception as e:
+    #         st.error(f"Failed to load the file: {e}")
+    
     st.header("Basic Data Statistics for Filtered Files")
 
-    # Get list of available filtered CSVs
-    available_files = [f for f in os.listdir(OUTPUT_DIR) if f.endswith("_filtered.csv")]
+    # Check that seed exists in session_state
+    if 'seed' not in st.session_state:
+        st.warning("Please define a seed by sampling clients first.")
+        st.stop()
+
+    # Use the seed from session
+    seed = st.session_state.seed
+    seed_str = f"_seed_{seed}.csv"
+
+    # Filter files with the correct seed suffix
+    available_files = [f for f in os.listdir(OUTPUT_DIR) if f.endswith(seed_str)]
 
     if not available_files:
-        st.warning("No filtered CSV files found in the output directory.")
+        st.warning(f"No filtered files found for seed {seed} in the output directory.")
     else:
-        selected_file = st.selectbox("Select a filtered file:", available_files)
+        # Optional: create nicer display labels
+        file_labels = [f.replace(seed_str, "") for f in available_files]
+        selected_label = st.selectbox("Select a filtered file:", file_labels)
+        selected_file = f"{selected_label}{seed_str}"
         file_path = os.path.join(OUTPUT_DIR, selected_file)
 
         try:
@@ -559,88 +632,133 @@ with tab1:
 
         except Exception as e:
             st.error(f"Failed to load the file: {e}")
-            
-    with tab4:
-        st.header("KMeans Clustering & Optimal K")
+        
+    # try:
+    #     df = pd.read_csv(file_path)
+    #     st.subheader("Preview of the Data")
+    #     st.dataframe(df.head(100), use_container_width=True)
 
-        if "features" not in st.session_state:
-            st.warning("Please run feature engineering first.")
+    #     st.subheader("Summary Statistics")
+    #     st.write(df.describe(include='all'))
+
+    #     st.subheader("Missing Values per Column")
+    #     st.write(df.isnull().sum())
+
+    #     st.subheader("Data Types")
+    #     buffer = df.dtypes.reset_index()
+    #     buffer.columns = ["Column", "Type"]
+    #     st.dataframe(buffer)
+
+    #     # === Additional Analysis ===
+    #     if "category" in df.columns:
+    #         st.subheader("Top 10 Categories by Count")
+    #         category_counts = df["category"].value_counts().head(10)
+    #         st.bar_chart(category_counts)
+
+    #         st.subheader("Average Price per Category (Top 10)")
+    #         avg_price = df.groupby("category")["price"].mean().sort_values(ascending=False).head(10)
+    #         st.bar_chart(avg_price)
+
+    #     if "price" in df.columns:
+    #         st.subheader("Price Distribution")
+    #         fig, ax = plt.subplots()
+    #         df["price"].dropna().hist(bins=30, ax=ax)
+    #         ax.set_title("Price Distribution")
+    #         ax.set_xlabel("Price")
+    #         ax.set_ylabel("Frequency")
+    #         st.pyplot(fig)
+
+    #     if "sku" in df.columns:
+    #         st.subheader("Top 10 SKUs by Frequency")
+    #         top_skus = df["sku"].value_counts().head(10)
+    #         st.bar_chart(top_skus)
+
+    # except Exception as e:
+    #         st.error(f"Failed to load the file: {e}")
+
+
+            
+with tab4:
+    st.header("KMeans Clustering & Optimal K")
+
+    if "features" not in st.session_state:
+        st.warning("Please run feature engineering first.")
+        st.stop()
+
+    df = st.session_state.features.copy()
+    numeric_cols = [c for c in df.columns if c not in ["client_id", "persona"] and np.issubdtype(df[c].dtype, np.number)]
+
+    if st.button("Run Silhouette Score Analysis"):
+        df_clean = df[numeric_cols].replace([np.inf, -np.inf], np.nan).dropna()
+        X = StandardScaler().fit_transform(df_clean)
+
+        silhouette_scores = []
+        k_range = range(2, 11)
+
+        for k in k_range:
+            model = KMeans(n_clusters=k, random_state=42, n_init='auto')
+            labels = model.fit_predict(X)
+            score = silhouette_score(X, labels)
+            silhouette_scores.append(score)
+            st.write(f"k = {k} → Silhouette Score: {score:.4f}")
+
+        best_k = k_range[np.argmax(silhouette_scores)]
+        st.session_state.best_k = best_k
+        st.success(f"✅ Optimal number of clusters: {best_k}")
+
+        # Plot silhouette score vs k
+        fig, ax = plt.subplots()
+        ax.plot(list(k_range), silhouette_scores, marker='o')
+        ax.set_title("Silhouette Score vs. k")
+        ax.set_xlabel("k")
+        ax.set_ylabel("Score")
+        st.pyplot(fig)
+
+    if st.button("Run KMeans with Optimal k"):
+        if "best_k" not in st.session_state:
+            st.warning("Please run silhouette score analysis first.")
             st.stop()
 
-        df = st.session_state.features.copy()
-        numeric_cols = [c for c in df.columns if c not in ["client_id", "persona"] and np.issubdtype(df[c].dtype, np.number)]
+        best_k = st.session_state.best_k
+        df_clean = df[numeric_cols].replace([np.inf, -np.inf], np.nan).dropna()
+        X = StandardScaler().fit_transform(df_clean)
 
-        if st.button("Run Silhouette Score Analysis"):
-            df_clean = df[numeric_cols].replace([np.inf, -np.inf], np.nan).dropna()
-            X = StandardScaler().fit_transform(df_clean)
+        with st.spinner(f"Running KMeans with k = {best_k}"):
+            model = KMeans(n_clusters=best_k, random_state=42, n_init='auto')
+            labels = model.fit_predict(X)
 
-            silhouette_scores = []
-            k_range = range(2, 11)
+            # Assign to df_clean to avoid index mismatch
+            df_clean = df_clean.copy()
+            df_clean["kmeans_cluster"] = labels
 
-            for k in k_range:
-                model = KMeans(n_clusters=k, random_state=42, n_init='auto')
-                labels = model.fit_predict(X)
-                score = silhouette_score(X, labels)
-                silhouette_scores.append(score)
-                st.write(f"k = {k} → Silhouette Score: {score:.4f}")
+            # PCA for plotting
+            pca = PCA(n_components=2)
+            proj = pca.fit_transform(X)
+            df_clean["pca_1"] = proj[:, 0]
+            df_clean["pca_2"] = proj[:, 1]
 
-            best_k = k_range[np.argmax(silhouette_scores)]
-            st.session_state.best_k = best_k
-            st.success(f"✅ Optimal number of clusters: {best_k}")
-
-            # Plot silhouette score vs k
+            # Plot clusters
             fig, ax = plt.subplots()
-            ax.plot(list(k_range), silhouette_scores, marker='o')
-            ax.set_title("Silhouette Score vs. k")
-            ax.set_xlabel("k")
-            ax.set_ylabel("Score")
+            sns.scatterplot(data=df_clean, x="pca_1", y="pca_2", hue="kmeans_cluster", palette="tab10", ax=ax)
+            ax.set_title("KMeans Clusters (PCA)")
             st.pyplot(fig)
 
-        if st.button("Run KMeans with Optimal k"):
-            if "best_k" not in st.session_state:
-                st.warning("Please run silhouette score analysis first.")
-                st.stop()
+            # Save results
+            df_clean.to_csv(os.path.join(OUTPUT_DIR, "kmeans_results.csv"), index=False)
+            st.success("✅ KMeans clustering completed and saved.")
+    # --- KMeans Cluster Profiling ---
+    st.subheader("KMeans Cluster Profiling")
 
-            best_k = st.session_state.best_k
-            df_clean = df[numeric_cols].replace([np.inf, -np.inf], np.nan).dropna()
-            X = StandardScaler().fit_transform(df_clean)
-
-            with st.spinner(f"Running KMeans with k = {best_k}"):
-                model = KMeans(n_clusters=best_k, random_state=42, n_init='auto')
-                labels = model.fit_predict(X)
-
-                # Assign to df_clean to avoid index mismatch
-                df_clean = df_clean.copy()
-                df_clean["kmeans_cluster"] = labels
-
-                # PCA for plotting
-                pca = PCA(n_components=2)
-                proj = pca.fit_transform(X)
-                df_clean["pca_1"] = proj[:, 0]
-                df_clean["pca_2"] = proj[:, 1]
-
-                # Plot clusters
-                fig, ax = plt.subplots()
-                sns.scatterplot(data=df_clean, x="pca_1", y="pca_2", hue="kmeans_cluster", palette="tab10", ax=ax)
-                ax.set_title("KMeans Clusters (PCA)")
-                st.pyplot(fig)
-
-                # Save results
-                df_clean.to_csv(os.path.join(OUTPUT_DIR, "kmeans_results.csv"), index=False)
-                st.success("✅ KMeans clustering completed and saved.")
-        # --- KMeans Cluster Profiling ---
-        st.subheader("KMeans Cluster Profiling")
-
-        if st.button("Generate KMeans Profiles"):
-            with st.spinner("Profiling KMeans clusters..."):
-                from mypackage.profile_kmeans_clusters import profile_kmeans_clusters
-                profile_kmeans_clusters(
-                    kmeans_result_path=os.path.join(OUTPUT_DIR, "kmeans_results.csv"),
-                    output_path=os.path.join(OUTPUT_DIR, "kmeans_cluster_profiles.csv")
-                )
-                st.success("✅ KMeans cluster profiles saved to 'output/kmeans_cluster_profiles.csv'")
-                df_profiles = pd.read_csv(os.path.join(OUTPUT_DIR, "kmeans_cluster_profiles.csv"))
-                st.dataframe(df_profiles)
+    if st.button("Generate KMeans Profiles"):
+        with st.spinner("Profiling KMeans clusters..."):
+            from mypackage.profile_kmeans_clusters import profile_kmeans_clusters
+            profile_kmeans_clusters(
+                kmeans_result_path=os.path.join(OUTPUT_DIR, "kmeans_results.csv"),
+                output_path=os.path.join(OUTPUT_DIR, "kmeans_cluster_profiles.csv")
+            )
+            st.success("✅ KMeans cluster profiles saved to 'output/kmeans_cluster_profiles.csv'")
+            df_profiles = pd.read_csv(os.path.join(OUTPUT_DIR, "kmeans_cluster_profiles.csv"))
+            st.dataframe(df_profiles)
 # with tab4:
 #     st.header("KMeans Clustering & Optimal K")
 
