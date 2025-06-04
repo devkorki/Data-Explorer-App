@@ -64,5 +64,5 @@ Place the following files inside the input/ directory:
 - page_visit.parquet
 
 ## Run the app
-streamlit run app.py
+python -m streamlit run app.py
 
