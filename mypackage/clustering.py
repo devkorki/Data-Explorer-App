@@ -7,6 +7,7 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler
 # import umap
+import numpy as np
 
 
 def run_umap(df, columns):
@@ -28,6 +29,8 @@ def run_dbscan(df, columns, eps=0.5, min_samples=5):
     result["dbscan_cluster"] = db.labels_
     return result
 def run_tsne(df, columns, perplexity=30):
+    df = df.replace([np.inf, -np.inf], np.nan)
+    df = df.dropna(subset=columns)
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(df[columns])
     tsne = TSNE(n_components=2, perplexity=perplexity, random_state=42)

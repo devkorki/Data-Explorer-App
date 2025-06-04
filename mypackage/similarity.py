@@ -4,7 +4,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import StandardScaler
 
 def get_most_similar_users(df, feature_cols, top_n=1):
-    
+    df = df.replace([np.inf, -np.inf], np.nan).dropna(subset=feature_cols)
+
     X = StandardScaler().fit_transform(df[feature_cols])
     sim_matrix = cosine_similarity(X)
 

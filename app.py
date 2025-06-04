@@ -17,6 +17,12 @@ from mypackage.clustering import run_tsne, run_pca, run_umap, plot_2d_projection
 from mypackage.feature_engineering import run_feature_engineering
 from mypackage.similarity import get_most_similar_users
 
+from mypackage.cluster_profiling import profile_clusters
+from mypackage.deep_learning import get_autoencoder_embedding
+
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+
 
 # Load user ID lists
 relevant_clients = np.load("input/relevant_clients.npy", allow_pickle=True).tolist()
@@ -111,7 +117,9 @@ def plot_heatmap(df, file_label):
 
 # ====== TABS ======
 
-tab1, tab2, tab3= st.tabs(["Data Statistics","Main Pipeline", "Similar Users Comparison"])
+# tab1, tab2, tab3= st.tabs(["Data Statistics","Main Pipeline", "Similar Users Comparison"])
+tab1, tab2, tab3, tab4 = st.tabs(["Data Statistics","Main Pipeline", "Similar Users", "KMeans Clustering"])
+
 with tab2:
     # --- Step 1: Load Clients ---
     st.header("Sample Relevant Clients")
@@ -141,20 +149,37 @@ with tab2:
         "Page Visit": "page_visit.parquet"
     }
 
+    # if st.button("Filter and Save All Files"):
+    #     if 'client_ids' not in st.session_state:
+    #         st.warning("Please sample clients first.")
+    #     else:
+    #         with st.spinner("Filtering and saving files..."):
+    #             for label, file in files.items():
+    #                 file_label = label.replace(" ", "_").lower()
+    #                 output_path = os.path.join(OUTPUT_DIR, f"{file_label}_filtered.csv")
+    #                 if os.path.exists(output_path):
+    #                     st.info(f"✅ {label}: already cached.")
+    #                 else:
+    #                     df = load_parquet_filtered(file, st.session_state.client_ids)
+    #                     df.to_csv(output_path, index=False)
+    #                     st.success(f"📁 {label}: saved {len(df)} rows to `{output_path}`")
+    
     if st.button("Filter and Save All Files"):
         if 'client_ids' not in st.session_state:
             st.warning("Please sample clients first.")
         else:
+            seed_str = f"_seed_{seed}"
             with st.spinner("Filtering and saving files..."):
                 for label, file in files.items():
                     file_label = label.replace(" ", "_").lower()
-                    output_path = os.path.join(OUTPUT_DIR, f"{file_label}_filtered.csv")
+                    output_path = os.path.join(OUTPUT_DIR, f"{file_label}{seed_str}.csv")
                     if os.path.exists(output_path):
-                        st.info(f"✅ {label}: already cached.")
+                        st.info(f"✅ {label}: using cached file for seed {seed}")
                     else:
                         df = load_parquet_filtered(file, st.session_state.client_ids)
                         df.to_csv(output_path, index=False)
                         st.success(f"📁 {label}: saved {len(df)} rows to `{output_path}`")
+
 
     # --- Step 2: Choose File + EDA ---
     st.header("Select File and EDA Options")
@@ -206,22 +231,45 @@ with tab2:
     #         st.success(f"✅ Feature matrix saved at: {output_path}")
 
 
+    # if st.button("Run Feature Engineering"):
+    #     with st.spinner("Generating user feature matrix..."):
+    #         output_path = run_feature_engineering()
+    #         df_feat = pd.read_csv(output_path)
+
+    #         # Try to load personas as well (optional)
+    #         try:
+    #             personas = pd.read_csv("output/user_personas.csv")
+    #             df_feat = df_feat.merge(personas, on="client_id", how="left")
+    #             df_feat["persona"] = df_feat["persona"].fillna("unknown")
+    #         except Exception:
+    #             df_feat["persona"] = "unknown"
+
+    #         st.session_state.features = df_feat
+    #         st.session_state.profiles = df_feat[["client_id", "persona"]]
+    #         st.success(f"✅ Feature matrix loaded and saved at: {output_path}")
+    @st.cache_data(show_spinner="Running feature engineering...")
+    def cached_feature_engineering():
+        # output_path = run_feature_engineering()
+        output_path = run_feature_engineering(seed=seed)
+
+        df = pd.read_csv(output_path)
+
+        # Merge personas if available
+        try:
+            personas = pd.read_csv("output/user_personas.csv")
+            df = df.merge(personas, on="client_id", how="left")
+            df["persona"] = df["persona"].fillna("unknown")
+        except Exception:
+            df["persona"] = "unknown"
+
+        return df   
+
     if st.button("Run Feature Engineering"):
-        with st.spinner("Generating user feature matrix..."):
-            output_path = run_feature_engineering()
-            df_feat = pd.read_csv(output_path)
-
-            # Try to load personas as well (optional)
-            try:
-                personas = pd.read_csv("output/user_personas.csv")
-                df_feat = df_feat.merge(personas, on="client_id", how="left")
-                df_feat["persona"] = df_feat["persona"].fillna("unknown")
-            except Exception:
-                df_feat["persona"] = "unknown"
-
+        with st.spinner("Loading from cache or computing..."):
+            df_feat = cached_feature_engineering()
             st.session_state.features = df_feat
             st.session_state.profiles = df_feat[["client_id", "persona"]]
-            st.success(f"✅ Feature matrix loaded and saved at: {output_path}")
+            st.success("✅ Feature matrix cached or recomputed successfully.")
 
 
     # --- Step 4: Clustering & Projection ---
@@ -331,6 +379,8 @@ with tab2:
                     st.image(out_path)
 
             if "DBSCAN" in projection_methods:
+                df = df.replace([np.inf, -np.inf], np.nan)
+                df = df.dropna(subset=cols)  # 'cols' is your selected numeric columns  
                 X = StandardScaler().fit_transform(df[cols])
                 pca = PCA(n_components=2)
                 X_pca = pca.fit_transform(X)
@@ -346,7 +396,33 @@ with tab2:
 
                 df.to_csv(os.path.join(OUTPUT_DIR, "dbscan_results.csv"), index=False)
 
+    # --- Cluster Profiling ---
+    st.header("Cluster Profiling")
 
+    if st.button("Generate Cluster Profiles"):
+        with st.spinner("Profiling clusters..."):
+            from mypackage.cluster_profiling import profile_clusters
+            profile_clusters(
+                feature_matrix_path=os.path.join(OUTPUT_DIR, "user_feature_matrix.csv"),
+                clustering_result_path=os.path.join(OUTPUT_DIR, "dbscan_results.csv"),
+                output_path=os.path.join(OUTPUT_DIR, "cluster_profiles.csv")
+            )
+            
+            
+            
+    ##--------------DEEP LEARNING---------------
+    st.header("Deep Learning")
+
+    if st.button("Run Deep Learning Embedding"):
+        df = st.session_state.features.copy()
+        cols = [c for c in df.columns if c not in ["client_id", "persona"] and np.issubdtype(df[c].dtype, np.number)]
+
+        embed_df = get_autoencoder_embedding(df, cols)
+        st.session_state.deep_embedding = embed_df
+        st.dataframe(embed_df.head())
+        
+        
+        
 # # --- Step 5: DBSCAN Clustering ---
 # st.header("DBSCAN Clustering")
 # eps = st.number_input("DBSCAN eps:", min_value=0.1, max_value=10.0, value=0.5, step=0.1)
@@ -436,7 +512,8 @@ with tab3:
             fig.add_trace(go.Scatterpolar(r=values_b, theta=top_features, fill='toself', name=f"Client {int(pair.client_2)}"))
             fig.update_layout(title="Top Feature Comparison", showlegend=True, polar=dict(radialaxis=dict(visible=True)))
             st.plotly_chart(fig, use_container_width=True)
-
+            
+  
 # ## COSINE SIMILARITY BETWEEN CLIENTS
 # if st.button("Find 2 Most Similar Clients"):
 #     if 'features' not in st.session_state:
@@ -482,3 +559,176 @@ with tab1:
 
         except Exception as e:
             st.error(f"Failed to load the file: {e}")
+            
+    with tab4:
+        st.header("KMeans Clustering & Optimal K")
+
+        if "features" not in st.session_state:
+            st.warning("Please run feature engineering first.")
+            st.stop()
+
+        df = st.session_state.features.copy()
+        numeric_cols = [c for c in df.columns if c not in ["client_id", "persona"] and np.issubdtype(df[c].dtype, np.number)]
+
+        if st.button("Run Silhouette Score Analysis"):
+            df_clean = df[numeric_cols].replace([np.inf, -np.inf], np.nan).dropna()
+            X = StandardScaler().fit_transform(df_clean)
+
+            silhouette_scores = []
+            k_range = range(2, 11)
+
+            for k in k_range:
+                model = KMeans(n_clusters=k, random_state=42, n_init='auto')
+                labels = model.fit_predict(X)
+                score = silhouette_score(X, labels)
+                silhouette_scores.append(score)
+                st.write(f"k = {k} → Silhouette Score: {score:.4f}")
+
+            best_k = k_range[np.argmax(silhouette_scores)]
+            st.session_state.best_k = best_k
+            st.success(f"✅ Optimal number of clusters: {best_k}")
+
+            # Plot silhouette score vs k
+            fig, ax = plt.subplots()
+            ax.plot(list(k_range), silhouette_scores, marker='o')
+            ax.set_title("Silhouette Score vs. k")
+            ax.set_xlabel("k")
+            ax.set_ylabel("Score")
+            st.pyplot(fig)
+
+        if st.button("Run KMeans with Optimal k"):
+            if "best_k" not in st.session_state:
+                st.warning("Please run silhouette score analysis first.")
+                st.stop()
+
+            best_k = st.session_state.best_k
+            df_clean = df[numeric_cols].replace([np.inf, -np.inf], np.nan).dropna()
+            X = StandardScaler().fit_transform(df_clean)
+
+            with st.spinner(f"Running KMeans with k = {best_k}"):
+                model = KMeans(n_clusters=best_k, random_state=42, n_init='auto')
+                labels = model.fit_predict(X)
+
+                # Assign to df_clean to avoid index mismatch
+                df_clean = df_clean.copy()
+                df_clean["kmeans_cluster"] = labels
+
+                # PCA for plotting
+                pca = PCA(n_components=2)
+                proj = pca.fit_transform(X)
+                df_clean["pca_1"] = proj[:, 0]
+                df_clean["pca_2"] = proj[:, 1]
+
+                # Plot clusters
+                fig, ax = plt.subplots()
+                sns.scatterplot(data=df_clean, x="pca_1", y="pca_2", hue="kmeans_cluster", palette="tab10", ax=ax)
+                ax.set_title("KMeans Clusters (PCA)")
+                st.pyplot(fig)
+
+                # Save results
+                df_clean.to_csv(os.path.join(OUTPUT_DIR, "kmeans_results.csv"), index=False)
+                st.success("✅ KMeans clustering completed and saved.")
+        # --- KMeans Cluster Profiling ---
+        st.subheader("KMeans Cluster Profiling")
+
+        if st.button("Generate KMeans Profiles"):
+            with st.spinner("Profiling KMeans clusters..."):
+                from mypackage.profile_kmeans_clusters import profile_kmeans_clusters
+                profile_kmeans_clusters(
+                    kmeans_result_path=os.path.join(OUTPUT_DIR, "kmeans_results.csv"),
+                    output_path=os.path.join(OUTPUT_DIR, "kmeans_cluster_profiles.csv")
+                )
+                st.success("✅ KMeans cluster profiles saved to 'output/kmeans_cluster_profiles.csv'")
+                df_profiles = pd.read_csv(os.path.join(OUTPUT_DIR, "kmeans_cluster_profiles.csv"))
+                st.dataframe(df_profiles)
+# with tab4:
+#     st.header("KMeans Clustering & Optimal K")
+
+#     if "features" not in st.session_state:
+#         st.warning("Please run feature engineering first.")
+#         st.stop()
+
+#     df = st.session_state.features.copy()
+#     numeric_cols = [c for c in df.columns if c not in ["client_id", "persona"] and np.issubdtype(df[c].dtype, np.number)]
+
+#     # if st.button("Run Silhouette Score Analysis"):
+#     #     from sklearn.preprocessing import StandardScaler
+
+#     #     df_clean = df[numeric_cols].replace([np.inf, -np.inf], np.nan).dropna()
+#     #     X = StandardScaler().fit_transform(df_clean)
+
+#     #     silhouette_scores = []
+#     #     k_range = range(2, 11)
+
+#     #     for k in k_range:
+#     #         model = KMeans(n_clusters=k, random_state=42, n_init='auto')
+#     #         labels = model.fit_predict(X)
+#     #         score = silhouette_score(X, labels)
+#     #         silhouette_scores.append(score)
+#     #         st.write(f"k = {k} → Silhouette Score: {score:.4f}")
+
+#     #     best_k = k_range[np.argmax(silhouette_scores)]
+#     #     st.success(f"✅ Optimal number of clusters: {best_k}")
+
+#     #     fig, ax = plt.subplots()
+#     #     ax.plot(list(k_range), silhouette_scores, marker='o')
+#     #     ax.set_title("Silhouette Score vs. k")
+#     #     ax.set_xlabel("k")
+#     #     ax.set_ylabel("Score")
+#     #     st.pyplot(fig)
+    
+#     if st.button("Run Silhouette Score Analysis"):
+#         df_clean = df[numeric_cols].replace([np.inf, -np.inf], np.nan).dropna()
+#         X = StandardScaler().fit_transform(df_clean)
+
+#         silhouette_scores = []
+#         k_range = range(2, 11)
+
+#         for k in k_range:
+#             model = KMeans(n_clusters=k, random_state=42, n_init='auto')
+#             labels = model.fit_predict(X)
+#             score = silhouette_score(X, labels)
+#             silhouette_scores.append(score)
+#             st.write(f"k = {k} → Silhouette Score: {score:.4f}")
+
+#         best_k = k_range[np.argmax(silhouette_scores)]
+#         st.session_state.best_k = best_k  # ✅ Save in session state
+#         st.success(f"✅ Optimal number of clusters: {best_k}")
+
+#         # Plot
+#         fig, ax = plt.subplots()
+#         ax.plot(list(k_range), silhouette_scores, marker='o')
+#         ax.set_title("Silhouette Score vs. k")
+#         ax.set_xlabel("k")
+#         ax.set_ylabel("Score")
+#         st.pyplot(fig)
+        
+#     if st.button("Run KMeans with Optimal k"):
+#         if "best_k" not in st.session_state:
+#             st.warning("Please run silhouette score analysis first.")
+#             st.stop()
+
+#         best_k = st.session_state.best_k
+#         df_clean = df[numeric_cols].replace([np.inf, -np.inf], np.nan).dropna()
+#         X = StandardScaler().fit_transform(df_clean)
+
+#         with st.spinner(f"Running KMeans with k = {best_k}"):
+#             model = KMeans(n_clusters=best_k, random_state=42, n_init='auto')
+#             labels = model.fit_predict(X)
+#             df["kmeans_cluster"] = labels
+
+#             # PCA projection
+#             pca = PCA(n_components=2)
+#             proj = pca.fit_transform(X)
+#             df["pca_1"] = proj[:, 0]
+#             df["pca_2"] = proj[:, 1]
+
+#             # Plot
+#             fig, ax = plt.subplots()
+#             sns.scatterplot(data=df, x="pca_1", y="pca_2", hue="kmeans_cluster", palette="tab10", ax=ax)
+#             ax.set_title("KMeans Clusters (PCA)")
+#             st.pyplot(fig)
+
+#             df.to_csv(os.path.join(OUTPUT_DIR, "kmeans_results.csv"), index=False)
+#             st.success("KMeans clustering completed and saved.")
+
