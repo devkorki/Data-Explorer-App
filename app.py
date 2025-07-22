@@ -24,6 +24,8 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 
 
+
+
 # Load user ID lists
 relevant_clients = np.load("input/relevant_clients.npy", allow_pickle=True).tolist()
 active_clients = np.load("input/active_clients.npy", allow_pickle=True).tolist()
@@ -60,6 +62,8 @@ if missing_files:
     st.stop()
 
 # ====== STREAMLIT UI ======
+#st.set_page_config(page_title="Main Tool", layout="wide")
+
 st.set_page_config(page_title="Data Explorer", layout="wide")
 st.title("Interactive Data Pipeline & Clustering UI")
 

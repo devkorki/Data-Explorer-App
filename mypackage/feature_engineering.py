@@ -118,14 +118,39 @@ def run_feature_engineering(input_dir="input", output_dir="output", seed=None):
         ).reset_index()
 
     def aggregate_visit(df):
+        # df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+        # span = df.groupby("client_id")["timestamp"].agg(min="min", max="max")
+        # span["visit_days"] = (span["max"] - span["min"]).dt.days
+        # counts = df.groupby("client_id").agg(
+        #     visit_count=("url", "count"),
+        #     unique_pages=("url", "nunique")
+        # )
+        # return span.join(counts).reset_index()
+        # span = df.groupby("client_id")["timestamp"].agg(first_seen="min", last_seen="max")
+        # span["visit_days"] = (span["last_seen"] - span["first_seen"]).dt.days
+        # counts = df.groupby("client_id").agg(
+        # visit_count=("url", "count"),
+        # unique_pages=("url", "nunique")
+        # )
+        # return span.join(counts).reset_index()
+        
         df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-        span = df.groupby("client_id")["timestamp"].agg(min="min", max="max")
-        span["visit_days"] = (span["max"] - span["min"]).dt.days
+        span = df.groupby("client_id")["timestamp"].agg(first_seen="min", last_seen="max")
+
+        # Convert to datetime (if not already)
+        span["first_seen"] = pd.to_datetime(span["first_seen"], errors="coerce")
+        span["last_seen"] = pd.to_datetime(span["last_seen"], errors="coerce")
+
+        span["visit_days"] = (span["last_seen"] - span["first_seen"]).dt.days
+
         counts = df.groupby("client_id").agg(
             visit_count=("url", "count"),
             unique_pages=("url", "nunique")
         )
+
         return span.join(counts).reset_index()
+
+
 
     def recency_feature(df, name):
         df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
