@@ -53,6 +53,9 @@ This Streamlit application allows you to interactively explore, clean, and analy
 
 - **Caching and Reproducibility:** Uses consistent seeds and cached outputs for reproducibility.
 
+## Dataset Download
+
+https://www.recsyschallenge.com/2025/#dataset
 
 
 ##  Getting Started
