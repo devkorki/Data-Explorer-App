@@ -1,6 +1,6 @@
 #  Interactive Data Pipeline & Clustering App
 
-This Streamlit application allows you to interactively explore, clean, and analyze user interaction data through visual EDA, persona creation, feature engineering, and clustering with dimensionality reduction.
+  This Streamlit application allows you to interactively explore, clean, and analyze user interaction data through visual EDA, persona creation, feature engineering, and clustering with dimensionality reduction.
 
 ## Folder Structure
 ```bash
